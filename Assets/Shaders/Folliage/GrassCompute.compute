@@ -1,0 +1,254 @@
+#pragma kernel GeneratePlane
+#pragma kernel GeneratePlanet
+#include "Assets/UtilityPack/Shaders/MathHelper.hlsl"
+#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+struct DrawVertex
+{
+    float3 pos;
+    float2 uv;
+};
+
+struct Triangle
+{
+    DrawVertex drawVertices[3];
+};
+
+//holds surface informations and triangles
+struct Quad
+{
+    float3 normal;
+    float3 tangent;
+    float3 bitangent;
+    float3 posOS;
+    Triangle triangles[2];
+};
+
+//input of the vertices and indices of the mesh upon which to draw the folliage
+RWStructuredBuffer<float3> meshVertices;
+RWStructuredBuffer<int> meshIndices;
+
+//Output of the folliage quads
+AppendStructuredBuffer<Quad> folliageQuads;
+
+//arguments for the indirect procedural draw
+struct IndirectArgs
+{
+    uint numVerticesPerInstance;
+    uint numInstances;
+    uint startVertexIndex;
+    uint startInstanceIndex;
+};
+
+//input of the indirect args
+RWStructuredBuffer<IndirectArgs> indirectArgs;
+
+//
+int numTriangles;
+int numMeshTriangles;
+
+//num of folliages per unit of 
+int numFolliage;
+float probabilySpawnFolliage;
+float4x4 _LocalToWS;
+float4x4 _WSToLocal;
+float2 folliageDimensions;
+float offSetCenterFolliage;
+float angleTwistModifier;
+
+float2 heightRange;
+float2 steepnessRange;
+
+//max-min height in object space
+float maxHeight;
+float minHeight;
+
+//start pos in object space
+float3 startPos;
+
+//dir of the height
+float3 dirHeight;
+
+//generates the vertex
+DrawVertex GenerateVertex(float3 startPoint, float3x3 tsToWS, float2 uv, float2 offSet, float2 dimensions)
+{
+    DrawVertex drawVerticex;
+    //convert the uv in to world position given the tangent matrix
+    //NOTE:
+    //the z coordinate in tangentSpace has the same direction of the normal in object space
+    //the x coordinate in tangentSpace has the same direction of the tangent in object space
+    //ENDNOTE
+    float3 uvNormal = float3((uv.x-0.5f+offSet.x)*dimensions.x,0,(uv.y+offSet.y)*dimensions.y);
+    drawVerticex.pos = startPoint + mul(tsToWS, uvNormal);
+
+    //limit the uv to avoid strange effects at the very thei border
+    drawVerticex.uv = uv*0.97f;
+    return drawVerticex;
+}
+
+Quad NullQuad()
+{
+    Quad quad = (Quad)0;
+    quad.tangent = float3(0,0,0);
+    quad.bitangent = float3(0,0,0);
+    quad.normal = float3(0,0,0);
+    quad.posOS = float3(0,0,0);
+    DrawVertex drawVerticex = (DrawVertex)0;
+    drawVerticex.pos = float3(0,0,0);
+    drawVerticex.uv = float2(0,0);
+        //calculate the first triangle on the bottom left corner
+    Triangle triangleTarget = (Triangle)0;
+    triangleTarget.drawVertices[0] = drawVerticex;
+    triangleTarget.drawVertices[1] = drawVerticex;
+    triangleTarget.drawVertices[2] = drawVerticex;
+
+    //calculate the second triangle on the top right corner
+    Triangle triangleTarget1 = (Triangle)0;
+    triangleTarget1.drawVertices[0] = drawVerticex;
+    triangleTarget1.drawVertices[1] = drawVerticex;
+    triangleTarget1.drawVertices[2] = drawVerticex;
+    quad.triangles[0] = triangleTarget;
+    quad.triangles[1] = triangleTarget1;
+
+    return quad;
+}
+
+//creates the quads of the folliage given the center and normal of the triangle that is draw on
+void CalculateQuadFolliage(int startIndexFolliage, float3 centerTriangleMeshOS, float3 normalOS, float3x3 tangentToObject)
+{
+    for(int i = startIndexFolliage; i < (startIndexFolliage+numFolliage); i++)
+    {
+        //algorithm used to calculate a random position on the surface 
+        //level of the given triangle with the given settings
+        float rand01X = (rand(float4(0,i,0,1)+ float4(centerTriangleMeshOS,1)))*0.5f;
+        float rand01Y = (rand(float4(i,0,i,1)+ float4(centerTriangleMeshOS,1)))*0.5f;
+        float multiplier = ((rand(float4(0,0,i,1)+ float4(centerTriangleMeshOS* rand01Y,1)))*2-1)*offSetCenterFolliage;
+        centerTriangleMeshOS += mul(tangentToObject,float3(rand01X,rand01Y,0)) * multiplier;
+        
+        //calculate random angle 
+        float angle = rand(float4(centerTriangleMeshOS,1)) * 3.14f * 2 * angleTwistModifier;
+        float3x3 angleMatrixTwist = AngleAxis3x3(angle,float3(0,0,1));
+
+        //apply angle to the matrix
+        tangentToObject = mul(tangentToObject,angleMatrixTwist);
+
+
+        Quad quad = (Quad)0;
+
+        //calculate the first triangle on the bottom left corner
+        Triangle triangleTarget = (Triangle)0;
+        triangleTarget.drawVertices[0] = 
+            GenerateVertex(centerTriangleMeshOS, tangentToObject, float2(1,0), float2(0,0), folliageDimensions);
+        triangleTarget.drawVertices[1] = 
+            GenerateVertex(centerTriangleMeshOS, tangentToObject, float2(0,0), float2(0,0), folliageDimensions);
+        triangleTarget.drawVertices[2] = 
+            GenerateVertex(centerTriangleMeshOS, tangentToObject, float2(0,1), float2(0,0), folliageDimensions);
+
+        //calculate the second triangle on the top right corner
+        Triangle triangleTarget1 = (Triangle)0;
+        triangleTarget1.drawVertices[0] = 
+            GenerateVertex(centerTriangleMeshOS, tangentToObject, float2(0,1), float2(0,0), folliageDimensions);
+        triangleTarget1.drawVertices[1] = 
+            GenerateVertex(centerTriangleMeshOS, tangentToObject, float2(1,1), float2(0,0), folliageDimensions);
+        triangleTarget1.drawVertices[2] = 
+            GenerateVertex(centerTriangleMeshOS, tangentToObject, float2(1,0), float2(0,0), folliageDimensions);
+
+        quad.triangles[0] = triangleTarget;
+        quad.triangles[1] = triangleTarget1;
+
+        //calculate the properties of the quad
+        quad.tangent = mul(tangentToObject, float3(1,0,0));
+        quad.bitangent = mul(tangentToObject, float3(0,1,0));
+        quad.normal = cross( quad.tangent,quad.bitangent);
+        quad.posOS = centerTriangleMeshOS;
+        folliageQuads.Append(quad);
+        InterlockedAdd(indirectArgs[0].numInstances,1);   
+    }
+}
+
+void FillNullQuads(int startIndexQuad)
+{
+    for(int i = startIndexQuad; i < (startIndexQuad + numFolliage); i++)
+    {
+        folliageQuads.Append(NullQuad());
+        InterlockedAdd(indirectArgs[0].numInstances,1);   
+    }
+}
+
+void GenerateFolliage(uint3 id, bool isPlanet)
+{
+    if (id.x >= numMeshTriangles) return;
+
+    //vertex of the current triangle
+    int vertexIndex = id.x*3;
+    
+    //calculate the probability of the folliage being present on this mesh triangle
+    float probability = saturate(rand(float4(vertexIndex,vertexIndex,vertexIndex,1))) + probabilySpawnFolliage;
+
+    if (probability <= 1.08f)
+    {
+        //FillNullQuads(id.x * numTriangles);
+        return;
+    }
+
+    //get the data of the mesh's triangle
+    float3 meshVerticesPointA = meshVertices[meshIndices[vertexIndex]];
+    float3 meshVerticesPointB = meshVertices[meshIndices[vertexIndex+1]];
+    float3 meshVerticesPointC = meshVertices[meshIndices[vertexIndex+2]];
+    float3 centerTriangleMeshOS = (meshVerticesPointA + meshVerticesPointB + meshVerticesPointC)/(float)3.0f;
+    
+    //calculate the height
+    float height = 1;
+    if (isPlanet)
+    {
+        height = length(centerTriangleMeshOS-startPos);   
+    }
+    else
+    {
+        height = dot(centerTriangleMeshOS-startPos, dirHeight);
+    }
+
+    float height01 = height/(maxHeight-minHeight);
+
+    if (height01 < heightRange.x || height01 > heightRange.y)
+    {
+        //FillNullQuads(id.x * numTriangles);
+        return;
+    }
+
+    float3 normalOS;
+    float3x3 tangentToObject;
+    GetTriangleNormalAndTSToOSMatrix(meshVerticesPointA, meshVerticesPointB, meshVerticesPointC, normalOS, tangentToObject);
+
+    //Get the steepness and if it's between the given range then calculate the quad
+    float steepness = 1;
+
+    if (isPlanet)
+    {
+        steepness = dot(normalOS, normalize(centerTriangleMeshOS-startPos));
+    }
+    else
+    {
+        steepness = dot(normalOS, dirHeight);
+    }
+
+    if (steepness < steepnessRange.x || steepness > steepnessRange.y)
+    {
+        //FillNullQuads(id.x * numTriangles);
+        return;
+    }
+
+    CalculateQuadFolliage(id.x * numTriangles, centerTriangleMeshOS, normalOS, tangentToObject);
+}
+
+[numthreads(128,1,1)]
+void GeneratePlane (uint3 id : SV_DispatchThreadID)
+{
+    GenerateFolliage(id, false);
+}
+
+[numthreads(128,1,1)]
+void GeneratePlanet(uint3 id : SV_DispatchThreadID)
+{
+    GenerateFolliage(id, true);
+}

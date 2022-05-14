@@ -1,0 +1,37 @@
+
+#pragma kernel Brush
+
+static const int numThreads = 8;
+
+RWStructuredBuffer<float4> verticesVert4;
+
+float brushRadius;
+float brushAmount;
+float3 brushLocalPoint; 
+
+int dimensionX;
+int dimensionY;
+int dimensionZ;
+
+int indexFromCoord(int x, int y, int z) {
+    
+    return z * (dimensionX+1) * (dimensionY+1) + y * (dimensionX+1) + x;
+}
+
+float GetIntensityValue(float4 v)
+{
+    float dst = length(v-brushLocalPoint);
+    if (dst < brushRadius)
+        return saturate(v.w + brushAmount);
+    return v.w;
+}
+
+[numthreads(numThreads,numThreads,numThreads)]
+void Brush (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x > dimensionX || id.y > dimensionY || id.z > dimensionZ) return;
+
+    int i = indexFromCoord(id.x,id.y,id.z);
+    float intensityValue = GetIntensityValue(verticesVert4[i].xyzw);
+    verticesVert4[i] = float4(verticesVert4[i].xyz,intensityValue);
+}

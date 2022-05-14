@@ -1,0 +1,77 @@
+#pragma kernel CSMain
+#include "Assets/UtilityPack/Shaders/MathHelper.hlsl"
+
+//texture of the optical depth
+RWTexture2D<float4> _BakedOpticalDepthTexture;
+
+//resolution of the texture
+int _OpticalDepthTextureSize;
+
+int _OpticalDepthSamples;
+
+float _AtmosphereRadius;
+float _DensityFallOff;
+
+float DensityAtPoint(float2 densitySamplePoint)
+{
+	float planetRadius = 1;
+	float2 planetCentre = 0;
+
+	float heightAboveSurface = length(densitySamplePoint - planetCentre) - planetRadius;
+	float height01 = heightAboveSurface / (_AtmosphereRadius - planetRadius);
+
+    //returns the local density by elevating the exponential value by the negative height and
+    //forcing the density to be 0 when the altitude is 1 (max height)
+
+    //IN SHORT: the higher the altitude the lower the local density
+	float localDensity = exp(-height01 * _DensityFallOff) * (1 - height01);
+	return localDensity;
+}
+
+float OpticalDepth(float2 rayOrigin, float2 rayDir, float rayLength) 
+{
+	int numOpticalDepthPoints = _OpticalDepthSamples;
+
+	float2 densitySamplePoint = rayOrigin;
+	float stepSize = rayLength / (numOpticalDepthPoints - 1);
+	float opticalDepth = 0;
+
+	for (int i = 0; i < numOpticalDepthPoints; i ++) {
+		float localDensity = DensityAtPoint(densitySamplePoint);
+		opticalDepth += localDensity * stepSize;
+		densitySamplePoint += rayDir * stepSize;
+	}
+	return opticalDepth;
+}
+
+
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= _OpticalDepthTextureSize || id.y >= _OpticalDepthTextureSize) return;
+	const float planetRadius = 1;
+    //calculate the uv coordinate from the id and size
+    //in the x coordinate = the angulation
+    //in the y coordinate = the height
+	float2 uv = id / (float)_OpticalDepthTextureSize;
+
+    //use the y coord to store the height 
+	float height01 = uv.y;
+
+    //calculate the direction of the optical depth based on the uv coord through trigonometric equations
+	float yDir = -2 * uv.x + 1;
+	float xDir = sin( acos(yDir));
+	float2 dir = float2(xDir,yDir);
+	
+    //calculate the start point of the calulation of the optical depth
+	float2 inPoint = float2(0, lerp(planetRadius, _AtmosphereRadius, height01));
+
+	float dstThroughAtmosphere = raySphere(0, _AtmosphereRadius, float3(inPoint,0), float3(dir,0)).y;
+	float outScattering = OpticalDepth(inPoint + dir * 0.0001, dir, dstThroughAtmosphere-0.0002);
+	_BakedOpticalDepthTexture[id.xy] = outScattering;
+
+}
+	// float angle = uv.x * PI;
+	// //angle = (1-cos(angle))/2;
+	// float2 dir = float2(sin(angle), cos(angle));

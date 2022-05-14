@@ -1,0 +1,48 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef9ead2b5a8bd4e45aa0c61c04933bf4, type: 3}
+  m_Name: PlanetTerrainMatHandler
+  m_EditorClassIdentifier: 
+  mat: {fileID: 2100000, guid: 0f6aafa65e2334b498b72f2772746854, type: 2}
+  heightLayers:
+  - height: 1
+    blendingSteepness: 20
+    placementSettings:
+    - steepness: 1
+      terrainTex: {fileID: 2800000, guid: 04b794e765237a74f95b6945de4a97cd, type: 3}
+      scale: 2.04
+    - steepness: 0.66
+      terrainTex: {fileID: 2800000, guid: 1763db88b1a856e41bc100ffe9a858f2, type: 3}
+      scale: 0.1
+    - steepness: 0.66
+      terrainTex: {fileID: 2800000, guid: 1763db88b1a856e41bc100ffe9a858f2, type: 3}
+      scale: 0.32
+  - height: 0.569
+    blendingSteepness: 30
+    placementSettings:
+    - steepness: 1
+      terrainTex: {fileID: 2800000, guid: 7638fc88bd4a9584c8458ee6ed03bfb7, type: 3}
+      scale: 0.75
+    - steepness: 0.53
+      terrainTex: {fileID: 2800000, guid: 833f2ab1b7475d24c9a32f1ca463c746, type: 3}
+      scale: 0.17
+    - steepness: 0.54
+      terrainTex: {fileID: 2800000, guid: 833f2ab1b7475d24c9a32f1ca463c746, type: 3}
+      scale: 0.65
+  - height: 0.343
+    blendingSteepness: 10.37
+    placementSettings:
+    - steepness: 1
+      terrainTex: {fileID: 2800000, guid: 1763db88b1a856e41bc100ffe9a858f2, type: 3}
+      scale: 2.04
+  blendingHeight: 100
+  dstCamForCulling: 0

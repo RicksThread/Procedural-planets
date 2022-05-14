@@ -1,0 +1,108 @@
+
+#pragma kernel GenerateDensity
+#include "Assets/UtilityPack/Shaders/Procedural/Noise.compute"
+
+static const int numThreads = 8;
+
+struct NoiseLayer
+{
+    float dstFromCenter;
+    float radiusInfluence;
+    float radiusInfluenceBlending;
+
+
+    float strength;
+    //how smooth is the layer
+    float scale;
+    //how edgy the layer will be
+    float blending;
+
+    //how intense are the roughness and steepness
+    int octaveLayers;
+    //how noisy will the final product be, the lower the more linear it'll look
+    float roughness;     
+    //how strong is the noisyness
+    float steepness;
+
+    float distortion;
+    float distortionScale;
+};
+
+
+RWStructuredBuffer<float4> verticesVert4;
+RWStructuredBuffer<NoiseLayer> noiseLayers;
+
+
+float3 center;
+float3 offSet;
+int numLayers;
+
+//float radius;
+float radius;
+float globalScale;
+float globalBlending;
+
+
+int dimensionX;
+int dimensionY;
+int dimensionZ;
+
+int indexFromCoord(int x, int y, int z) 
+{
+    return z * (dimensionX+1) * (dimensionY+1) + y * (dimensionX+1) + x;
+}
+
+float clamp01(float _value)
+{
+    return max(min(_value, 1.0f), 0.0f);
+}
+
+float GetNoiseValue(float3 v)
+{
+    float height01 = clamp01(length(v-center)/radius);
+    float terrainLevel = 0;
+    v *= globalScale;
+
+    for(int i = 0; i < numLayers; i++)
+    {
+        float minDstCenter = noiseLayers[i].dstFromCenter - noiseLayers[i].radiusInfluence;
+        float maxDstCenter = noiseLayers[i].dstFromCenter + noiseLayers[i].radiusInfluence;
+
+        if (height01 > minDstCenter || height01 < maxDstCenter)
+        {
+            float density = pow(1-clamp01(abs(height01-noiseLayers[i].dstFromCenter) / noiseLayers[i].radiusInfluence), noiseLayers[i].radiusInfluenceBlending);
+
+            float currentStrength = noiseLayers[i].strength;
+            float currentScale = noiseLayers[i].scale;
+
+            for(int j = 0; j < noiseLayers[i].octaveLayers+1; j++)
+            {
+                terrainLevel += 
+                        pow
+                        (
+                            clamp01((snoise
+                            (
+                                v * currentScale
+                            ) * 0.5f + 0.5f
+                        ) * clamp01(density))
+                        ,noiseLayers[i].blending)
+                        * currentStrength;
+
+                currentScale *= noiseLayers[i].roughness;
+                currentStrength *= noiseLayers[i].steepness;
+            }
+        }
+    }
+
+    return saturate(pow(terrainLevel, globalBlending));
+}
+
+[numthreads(numThreads,numThreads,numThreads)]
+void GenerateDensity (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x > dimensionX || id.y > dimensionY || id.z > dimensionZ) return;
+
+    int i = indexFromCoord(id.x,id.y,id.z);
+    float intensityValue = GetNoiseValue(verticesVert4[i].xyz);
+    verticesVert4[i] = float4(verticesVert4[i].xyz,intensityValue);
+}

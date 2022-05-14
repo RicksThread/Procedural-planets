@@ -1,0 +1,45 @@
+
+#pragma kernel GenerateVerticesVert4
+#pragma kernel GenerateVerticesVert3
+
+static const int numThreads = 8;
+
+RWStructuredBuffer<float4> verticesVert4;
+RWStructuredBuffer<float3> verticesVert3;
+
+int dimensionX;
+int dimensionY;
+int dimensionZ;
+
+float pointsDst;
+float4 startPoint;
+int offSetBuffer;
+
+float3 upwardDir;
+float3 rightDir;
+float3 fowardDir;
+
+int indexFromCoord(int x, int y, int z) {
+    
+    return z * (dimensionX+1) * (dimensionY+1) + y * (dimensionX+1) + x;
+}
+
+[numthreads(numThreads,numThreads,numThreads)]
+void GenerateVerticesVert4 (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x > dimensionX || id.y > dimensionY || id.z > dimensionZ) return;
+
+    int i = indexFromCoord(id.x,id.y,id.z);
+    verticesVert4[offSetBuffer+i] = startPoint + float4((float)id.x, (float)id.y , (float)id.z, 0) * pointsDst;
+}
+
+[numthreads(numThreads,numThreads,numThreads)]
+void GenerateVerticesVert3 (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x > dimensionX || id.y > dimensionY || id.z > dimensionZ) return;
+
+    int i = indexFromCoord(id.x,id.y,id.z);
+    
+    verticesVert3[offSetBuffer+i] = startPoint + ((float)id.x * rightDir +  (float)id.y * upwardDir + (float)id.z * fowardDir) * pointsDst;
+}
+
